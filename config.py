@@ -26,7 +26,12 @@ def set_template(args):
         if args.lora_micro_batch_size is None:
             # Auto-calculate: 4 samples per GPU for multi-GPU, 4 for single GPU
             args.lora_micro_batch_size = 4 * num_gpus if num_gpus > 1 else 4
-            print(f"📊 Auto-set lora_micro_batch_size = {args.lora_micro_batch_size} ({num_gpus} GPU(s) × 4 samples/GPU)")
+            if num_gpus > 1:
+                print(f"📊 Auto-set lora_micro_batch_size = {args.lora_micro_batch_size} ({num_gpus} GPU(s) × 4 samples/GPU)")
+        
+        # Ensure we have a valid value
+        if args.lora_micro_batch_size is None:
+            args.lora_micro_batch_size = 4  # Fallback default
     else: 
         batch = 16 if args.dataset_code == 'ml-100k' else 64
 

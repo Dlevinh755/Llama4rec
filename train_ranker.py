@@ -121,6 +121,10 @@ def main(args, export_root=None):
 
 
 if __name__ == "__main__":
+    # Import args (already parsed in config.py)
     args.model_code = 'llm'
+    
+    # Set template to configure batch sizes based on GPU count
     set_template(args)
+    
     main(args, export_root=None)
