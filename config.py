@@ -24,13 +24,9 @@ def set_template(args):
         batch = 16 if args.dataset_code == 'ml-100k' else 12
         # For 4-bit Model Parallelism: use smaller batch per GPU
         if args.lora_micro_batch_size is None:
-            # Use 2 samples per process (conservative for 4-bit)
-            args.lora_micro_batch_size = 2
+            # Use 4 samples (reasonable for 4-bit with gradient accumulation)
+            args.lora_micro_batch_size = 4
             print(f"📊 Auto-set lora_micro_batch_size = {args.lora_micro_batch_size} (4-bit Model Parallelism)")
-        
-        # Ensure we have a valid value
-        if args.lora_micro_batch_size is None:
-            args.lora_micro_batch_size = 2  # Fallback default for 4-bit
     else: 
         batch = 16 if args.dataset_code == 'ml-100k' else 64
 
