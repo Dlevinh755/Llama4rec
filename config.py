@@ -22,16 +22,15 @@ def set_template(args):
     
     if 'llm' in args.model_code: 
         batch = 16 if args.dataset_code == 'ml-100k' else 12
-        # Scale micro batch size with number of GPUs
+        # For 4-bit Model Parallelism: use smaller batch per GPU
         if args.lora_micro_batch_size is None:
-            # Auto-calculate: 4 samples per GPU for multi-GPU, 4 for single GPU
-            args.lora_micro_batch_size = 4 * num_gpus if num_gpus > 1 else 4
-            if num_gpus > 1:
-                print(f"📊 Auto-set lora_micro_batch_size = {args.lora_micro_batch_size} ({num_gpus} GPU(s) × 4 samples/GPU)")
+            # Use 2 samples per process (conservative for 4-bit)
+            args.lora_micro_batch_size = 2
+            print(f"📊 Auto-set lora_micro_batch_size = {args.lora_micro_batch_size} (4-bit Model Parallelism)")
         
         # Ensure we have a valid value
         if args.lora_micro_batch_size is None:
-            args.lora_micro_batch_size = 4  # Fallback default
+            args.lora_micro_batch_size = 2  # Fallback default for 4-bit
     else: 
         batch = 16 if args.dataset_code == 'ml-100k' else 64
 
@@ -126,7 +125,7 @@ parser.add_argument('--bert_mask_prob', type=float, default=0.25)
 ################
 # LLM Model
 ################
-parser.add_argument('--llm_base_model', type=str, default='TinyLlama/TinyLlama-1.1B-Chat-v1.0')  # Open model, no authentication needed
+parser.add_argument('--llm_base_model', type=str, default='unsloth/Llama-3.2-1B-bnb-4bit')  # Pre-quantized 4-bit model
 parser.add_argument('--llm_base_tokenizer', type=str, default='unsloth/Llama-3.2-1B-bnb-4bit')
 parser.add_argument('--llm_max_title_len', type=int, default=32)
 parser.add_argument('--llm_max_text_len', type=int, default=1536)

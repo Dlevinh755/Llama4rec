@@ -27,8 +27,8 @@ from dataloader import *
 from trainer import *
 # from unsloth import FastLanguageModel  # Removed - using native HuggingFace
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, prepare_model_for_kbit_training
 from pytorch_lightning import seed_everything
 
 
@@ -45,31 +45,34 @@ def main(args, export_root=None):
 
     train_loader, val_loader, test_loader, tokenizer, test_retrieval = dataloader_factory(args)
     
-    # ✅ USE PURE BF16 MIXED PRECISION FOR TRUE DATA PARALLELISM
-    # BitsAndBytes forces Model Parallelism (splits model across GPUs)
-    # BF16 enables Data Parallelism (each GPU processes different batch)
+    # ✅ USE 4-BIT QUANTIZATION WITH MODEL PARALLELISM
+    # Model Parallelism: splits model layers across GPUs (better memory efficiency)
+    # Data Parallelism: each GPU processes different batches (faster but needs more memory)
+    
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+    )
     
     num_gpus = torch.cuda.device_count()
     local_rank = int(os.environ.get("LOCAL_RANK", -1))
     
     if local_rank in [-1, 0]:
-        print(f"🚀 Using {num_gpus} GPU(s) with FP16 Data Parallelism")
-        print(f"   Mode: Each GPU processes DIFFERENT batches (2x speedup)")
+        print(f"🚀 Using {num_gpus} GPU(s) with 4-bit Model Parallelism")
+        print(f"   Mode: Model layers SPLIT across GPUs (memory efficient)")
     
-    # Load model in FP16 for memory efficiency (Kaggle supports FP16, not BF16)
+    # Model Parallelism: distribute model across GPUs
     model = AutoModelForCausalLM.from_pretrained(
         args.llm_base_model,
-        torch_dtype=torch.float16,  # FP16 for Kaggle GPU compatibility
+        quantization_config=bnb_config,
+        device_map="auto",  # Automatically distribute layers across GPUs
         cache_dir=args.llm_cache_dir,
         trust_remote_code=True,
         low_cpu_mem_usage=True,
+        max_memory={0: "13GB", 1: "13GB"},  # Limit per GPU
     )
-    
-    # Move to GPU (DDP will handle distribution)
-    if local_rank != -1:
-        model = model.to(f'cuda:{local_rank}')
-    else:
-        model = model.to('cuda:0')
     
     tokenizer = AutoTokenizer.from_pretrained(
         args.llm_base_tokenizer if hasattr(args, 'llm_base_tokenizer') else args.llm_base_model,
@@ -77,26 +80,28 @@ def main(args, export_root=None):
         trust_remote_code=True,
     )
     
-    # Enable gradient checkpointing for memory efficiency
-    model.gradient_checkpointing_enable()
+    # Prepare model for 4-bit training with gradient checkpointing
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     
-    # Verify BF16 mixed precision
+    # Verify 4-bit quantization
     if local_rank in [-1, 0]:  # Only print on main process
         print("\n" + "="*50)
-        print("🔍 MODEL PRECISION CHECK")
+        print("🔍 MODEL QUANTIZATION CHECK (4-bit)")
         print("="*50)
         
-        # Check model dtype
+        # Check model dtype and device distribution
         for name, param in model.named_parameters():
-            if 'embed' in name or 'lm_head' in name or 'q_proj' in name:
+            if 'embed' in name or 'lm_head' in name:
                 print(f"Layer: {name}")
                 print(f"   dtype: {param.dtype}")
                 print(f"   device: {param.device}")
-                if name.endswith('q_proj.weight'):
-                    break
+            if hasattr(param, 'quant_state'):
+                print(f"✅ 4-bit Quantized: {name}")
+                print(f"   device: {param.device}")
+                break
         
-        print(f"\n✅ Model loaded in {next(model.parameters()).dtype}")
-        print("✅ Using FP16 Mixed Precision for 2x speedup!")
+        print(f"\n✅ Model using 4-bit quantization with Model Parallelism")
+        print("✅ Memory efficient for 2 GPU training!")
         print("="*50 + "\n")
     
     # Configure LoRA

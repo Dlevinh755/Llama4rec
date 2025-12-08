@@ -81,9 +81,9 @@ class LLMTrainer(Trainer):
             warmup_steps=args.warmup_steps,
             num_train_epochs=args.lora_num_epochs,
             learning_rate=args.lora_lr,
-            fp16=True,  # ✅ Use FP16 (Kaggle only supports FP16, not BF16)
+            fp16=True,  # Use FP16 mixed precision
             logging_steps=10,
-            optim="adamw_torch",  # Standard AdamW for FP16
+            optim="paged_adamw_8bit",  # 8-bit optimizer for memory efficiency
             eval_strategy=eval_strategy,
             save_strategy="steps",
             eval_steps=args.lora_val_iterations,
