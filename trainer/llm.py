@@ -81,8 +81,8 @@ class LLMTrainer(Trainer):
             load_best_model_at_end=False,
             ddp_find_unused_parameters=False if num_gpus > 1 else None,  # Enable DDP for multi-GPU
             group_by_length=False,
-            report_to="wandb" if use_wandb else None,
-            run_name=args.model_code+'_'+args.dataset_code if use_wandb else None,
+            report_to="none",  # Completely disable wandb
+            run_name=None,
             metric_for_best_model=args.rerank_best_metric,
             greater_is_better=True,
             # Multi-GPU optimization

@@ -12,6 +12,8 @@ sys.stderr = open(os.devnull, 'w')  # Suppress stderr warnings
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 os.environ['WANDB_SILENT'] = 'true'
 os.environ['WANDB_CONSOLE'] = 'off'
+os.environ['WANDB_MODE'] = 'disabled'  # Completely disable wandb
+os.environ['WANDB_DISABLED'] = 'true'
 
 # Multi-GPU setup
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
@@ -58,21 +60,26 @@ def main(args, export_root=None):
     
     # Multi-GPU support
     num_gpus = torch.cuda.device_count()
-    print(f"🚀 Using {num_gpus} GPU(s) for training")
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    # For multi-GPU, distribute model across GPUs
-    if num_gpus > 1:
-        max_memory_mapping = {i: "13GB" for i in range(num_gpus)}  # Equal split
+    local_rank = int(os.environ.get("LOCAL_RANK", -1))
+    
+    if local_rank in [-1, 0]:
+        print(f"🚀 Using {num_gpus} GPU(s) for training")
+    
+    # Device mapping for each process
+    if local_rank != -1:
+        device_map = {'': local_rank}  # Each process uses its own GPU
+        max_memory_mapping = {local_rank: "13GB"}
     else:
+        device_map = 'auto'
         max_memory_mapping = {0: "13GB"}
     
     model = AutoModelForCausalLM.from_pretrained(
         args.llm_base_model,
-        quantization_config=bnb_config,
-        device_map={'': local_rank},
+        quantization_config=bnb_config,  # 4-bit config
+        device_map=device_map,
         cache_dir=args.llm_cache_dir,
         trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
+        # ❌ DON'T set torch_dtype - conflicts with quantization_config
         low_cpu_mem_usage=True,
         max_memory=max_memory_mapping,
     )
@@ -87,20 +94,29 @@ def main(args, export_root=None):
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     
     # Verify 4-bit quantization
-    local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if local_rank in [-1, 0]:  # Only print on main process
         print("\n" + "="*50)
         print("🔍 MODEL QUANTIZATION CHECK")
         print("="*50)
-        for name, module in model.named_modules():
-            if hasattr(module, 'weight') and hasattr(module.weight, 'dtype'):
-                if 'lm_head' in name or 'embed' in name:  # Check key layers
-                    print(f"Layer: {name}")
-                    print(f"  dtype: {module.weight.dtype}")
-                    print(f"  shape: {module.weight.shape}")
-                    if hasattr(module.weight, 'quant_state'):
-                        print(f"  ✅ Quantized: {module.weight.quant_state}")
-                    break
+        
+        # Check if model is quantized
+        is_quantized = False
+        for name, param in model.named_parameters():
+            if hasattr(param, 'quant_state'):
+                is_quantized = True
+                print(f"✅ 4-bit Quantized Layer: {name}")
+                print(f"   Quant State: {param.quant_state}")
+                break
+            elif 'embed' in name or 'lm_head' in name:
+                print(f"Layer: {name}")
+                print(f"   dtype: {param.dtype}")
+                print(f"   device: {param.device}")
+        
+        if is_quantized:
+            print("✅ Model is using 4-bit quantization!")
+        else:
+            print("⚠️  Model is NOT quantized (using full precision)")
+        
         print("="*50 + "\n")
     
     # Configure LoRA
