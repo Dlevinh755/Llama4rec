@@ -69,7 +69,7 @@ class LLMTrainer(Trainer):
             warmup_steps=args.warmup_steps,
             num_train_epochs=args.lora_num_epochs,
             learning_rate=args.lora_lr,
-            bf16=True,
+            fp16=True,  # ✅ Use FP16 instead of BF16
             logging_steps=10,
             optim="paged_adamw_8bit",  # Use 8bit optimizer to save memory
             eval_strategy=eval_strategy,
