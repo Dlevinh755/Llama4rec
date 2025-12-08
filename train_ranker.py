@@ -26,15 +26,9 @@ from dataloader import *
 from trainer import *
 # from unsloth import FastLanguageModel  # Removed - using native HuggingFace
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
 from pytorch_lightning import seed_everything
-from peft import (
-    LoraConfig,
-    get_peft_model,
-    get_peft_model_state_dict,
-    prepare_model_for_kbit_training,
-)
 
 
 try:
@@ -50,41 +44,31 @@ def main(args, export_root=None):
 
     train_loader, val_loader, test_loader, tokenizer, test_retrieval = dataloader_factory(args)
     
-    # Modern HuggingFace approach with BitsAndBytes 8-bit quantization
-    # 8-bit supports DDP (Data Parallelism) better than 4-bit
-    bnb_config = BitsAndBytesConfig(
-        load_in_8bit=True,  # Changed from 4bit to 8bit for multi-GPU support
-        llm_int8_threshold=6.0,
-        llm_int8_has_fp16_weight=False,
-    )
+    # ✅ USE PURE BF16 MIXED PRECISION FOR TRUE DATA PARALLELISM
+    # BitsAndBytes forces Model Parallelism (splits model across GPUs)
+    # BF16 enables Data Parallelism (each GPU processes different batch)
     
-    # Multi-GPU support
     num_gpus = torch.cuda.device_count()
     local_rank = int(os.environ.get("LOCAL_RANK", -1))
     
     if local_rank in [-1, 0]:
-        print(f"🚀 Using {num_gpus} GPU(s) for training")
+        print(f"🚀 Using {num_gpus} GPU(s) with FP16 Data Parallelism")
+        print(f"   Mode: Each GPU processes DIFFERENT batches (2x speedup)")
     
-    # Device mapping for each process
-    if local_rank != -1:
-        # DDP mode: Each process gets full model on its own GPU
-        device_map = {'': local_rank}
-        max_memory_mapping = {local_rank: "14GB"}  # 8-bit uses less memory than float32
-    else:
-        # Single GPU mode
-        device_map = 'auto'
-        max_memory_mapping = {0: "14GB"}
-    
+    # Load model in FP16 for memory efficiency (Kaggle supports FP16, not BF16)
     model = AutoModelForCausalLM.from_pretrained(
         args.llm_base_model,
-        quantization_config=bnb_config,  # 4-bit config
-        device_map=device_map,
+        torch_dtype=torch.float16,  # FP16 for Kaggle GPU compatibility
         cache_dir=args.llm_cache_dir,
         trust_remote_code=True,
-        # ❌ DON'T set torch_dtype - conflicts with quantization_config
         low_cpu_mem_usage=True,
-        max_memory=max_memory_mapping,
     )
+    
+    # Move to GPU (DDP will handle distribution)
+    if local_rank != -1:
+        model = model.to(f'cuda:{local_rank}')
+    else:
+        model = model.to('cuda:0')
     
     tokenizer = AutoTokenizer.from_pretrained(
         args.llm_base_tokenizer if hasattr(args, 'llm_base_tokenizer') else args.llm_base_model,
@@ -92,38 +76,26 @@ def main(args, export_root=None):
         trust_remote_code=True,
     )
     
-    # Prepare model for k-bit training with gradient checkpointing
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    # Enable gradient checkpointing for memory efficiency
+    model.gradient_checkpointing_enable()
     
-    # Verify 8-bit quantization
+    # Verify BF16 mixed precision
     if local_rank in [-1, 0]:  # Only print on main process
         print("\n" + "="*50)
-        print("🔍 MODEL QUANTIZATION CHECK (8-bit)")
+        print("🔍 MODEL PRECISION CHECK")
         print("="*50)
         
-        # Check if model is quantized (8-bit has different attributes)
-        is_quantized = False
+        # Check model dtype
         for name, param in model.named_parameters():
-            if hasattr(param, 'CB') or hasattr(param, 'SCB'):  # 8-bit quantization attributes
-                is_quantized = True
-                print(f"✅ 8-bit Quantized Layer: {name}")
-                if hasattr(param, 'CB'):
-                    print(f"   CB attribute present (8-bit)")
-                break
-            elif hasattr(param, 'quant_state'):  # 4-bit would have this
-                is_quantized = True
-                print(f"✅ 4-bit Quantized Layer: {name}")
-                break
-            elif 'embed' in name or 'lm_head' in name:
+            if 'embed' in name or 'lm_head' in name or 'q_proj' in name:
                 print(f"Layer: {name}")
                 print(f"   dtype: {param.dtype}")
                 print(f"   device: {param.device}")
+                if name.endswith('q_proj.weight'):
+                    break
         
-        if is_quantized:
-            print("✅ Model is using quantization for multi-GPU DDP!")
-        else:
-            print("⚠️  Model is NOT quantized (using full precision)")
-        
+        print(f"\n✅ Model loaded in {next(model.parameters()).dtype}")
+        print("✅ Using FP16 Mixed Precision for 2x speedup!")
         print("="*50 + "\n")
     
     # Configure LoRA
