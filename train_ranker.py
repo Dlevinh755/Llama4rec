@@ -1,18 +1,19 @@
 import os
 import warnings
+import sys
 import torch
 
-# Suppress all warnings
+# Suppress ALL warnings
 warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
+sys.stderr = open(os.devnull, 'w')  # Suppress stderr warnings
 
-# CUDA debugging and optimization
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1'  # Synchronous CUDA for better error messages
-os.environ['TORCH_USE_CUDA_DSA'] = '1'    # Enable device-side assertions
+# Environment variables
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-os.environ['WANDB_MODE'] = 'offline'
-os.environ['WANDB_DISABLED'] = 'true'
+os.environ['WANDB_SILENT'] = 'true'
+os.environ['WANDB_CONSOLE'] = 'off'
 
-# Multi-GPU setup for Kaggle (2 GPUs)
+# Multi-GPU setup
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 
 import argparse
@@ -84,6 +85,23 @@ def main(args, export_root=None):
     
     # Prepare model for k-bit training with gradient checkpointing
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    
+    # Verify 4-bit quantization
+    local_rank = int(os.environ.get("LOCAL_RANK", -1))
+    if local_rank in [-1, 0]:  # Only print on main process
+        print("\n" + "="*50)
+        print("🔍 MODEL QUANTIZATION CHECK")
+        print("="*50)
+        for name, module in model.named_modules():
+            if hasattr(module, 'weight') and hasattr(module.weight, 'dtype'):
+                if 'lm_head' in name or 'embed' in name:  # Check key layers
+                    print(f"Layer: {name}")
+                    print(f"  dtype: {module.weight.dtype}")
+                    print(f"  shape: {module.weight.shape}")
+                    if hasattr(module.weight, 'quant_state'):
+                        print(f"  ✅ Quantized: {module.weight.quant_state}")
+                    break
+        print("="*50 + "\n")
     
     # Configure LoRA
     lora_config = LoraConfig(
