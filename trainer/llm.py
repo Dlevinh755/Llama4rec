@@ -100,7 +100,8 @@ class LLMTrainer(Trainer):
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
-        self.tokenizer = tokenizer
+        self.processing_class = tokenizer  # Use new attribute name instead of deprecated tokenizer
+        self.tokenizer = tokenizer  # Keep for backward compatibility
         
         self.train_loader.collate_fn = llama_collate_fn_w_truncation(self.llm_max_text_len, eval=False)
         self.val_loader.collate_fn = llama_collate_fn_w_truncation(self.llm_max_text_len, eval=True)

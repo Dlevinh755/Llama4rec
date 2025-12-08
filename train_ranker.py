@@ -1,6 +1,12 @@
 import os
+import warnings
 import torch
+
+# Suppress all warnings
+warnings.filterwarnings('ignore')
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+os.environ['WANDB_MODE'] = 'offline'  # Disable wandb prompts
+os.environ['WANDB_DISABLED'] = 'true'
 
 import argparse
 from llama_datasets import DATASETS
