@@ -168,6 +168,10 @@ class LLMTrainer(Trainer):
                 if 'input_ids' in inputs:
                     batch_size = inputs['input_ids'].size(0)
             
-            print(f"[GPU {gpu_id}] Step {self.state.global_step}, Batch: {batch_size}, Loss: {loss.item():.4f}")
+            # Calculate per-GPU loss BEFORE synchronization
+            local_loss = loss.item() if not isinstance(loss, float) else loss
+            
+            # Show BOTH local loss and global loss
+            print(f"[GPU {gpu_id}] Step {self.state.global_step}, Batch: {batch_size}, Local Loss: {local_loss:.4f}")
 
         return loss

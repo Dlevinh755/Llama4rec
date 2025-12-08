@@ -22,8 +22,11 @@ def set_template(args):
     
     if 'llm' in args.model_code: 
         batch = 16 if args.dataset_code == 'ml-100k' else 12
-        # Scale micro batch size with number of GPUs (keep total batch same)
-        args.lora_micro_batch_size = min(batch, 4 * num_gpus)  # 4 per GPU
+        # Scale micro batch size with number of GPUs
+        if args.lora_micro_batch_size is None:
+            # Auto-calculate: 4 samples per GPU for multi-GPU, 4 for single GPU
+            args.lora_micro_batch_size = 4 * num_gpus if num_gpus > 1 else 4
+            print(f"📊 Auto-set lora_micro_batch_size = {args.lora_micro_batch_size} ({num_gpus} GPU(s) × 4 samples/GPU)")
     else: 
         batch = 16 if args.dataset_code == 'ml-100k' else 64
 
@@ -118,7 +121,7 @@ parser.add_argument('--bert_mask_prob', type=float, default=0.25)
 ################
 # LLM Model
 ################
-parser.add_argument('--llm_base_model', type=str, default='unsloth/Llama-3.2-1B-bnb-4bit')
+parser.add_argument('--llm_base_model', type=str, default='TinyLlama/TinyLlama-1.1B-Chat-v1.0')  # Open model, no authentication needed
 parser.add_argument('--llm_base_tokenizer', type=str, default='unsloth/Llama-3.2-1B-bnb-4bit')
 parser.add_argument('--llm_max_title_len', type=int, default=32)
 parser.add_argument('--llm_max_text_len', type=int, default=1536)
@@ -144,7 +147,7 @@ parser.add_argument('--lora_num_epochs', type=int, default=1)
 parser.add_argument('--lora_val_iterations', type=int, default=100)
 parser.add_argument('--lora_early_stopping_patience', type=int, default=20)
 parser.add_argument('--lora_lr', type=float, default=1e-4)
-parser.add_argument('--lora_micro_batch_size', type=int, default=4)  # Reduced for GPU memory
+parser.add_argument('--lora_micro_batch_size', type=int, default=None)  # Auto-calculated in set_template() based on GPU count
 parser.add_argument('--lora_eval_strategy', type=str, default='no', choices=['no', 'steps', 'epoch'])
 
 ################
