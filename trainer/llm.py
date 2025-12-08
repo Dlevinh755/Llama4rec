@@ -149,3 +149,13 @@ class LLMTrainer(Trainer):
     
     def get_test_dataloader(self, test_dataset: Optional[Dataset] = None) -> DataLoader:
         return self.test_loader
+    
+    def training_step(self, *args, **kwargs):
+        # Call the original training_step method
+        loss = super().training_step(*args, **kwargs)
+
+        # Add custom logging for loss
+        if self.state.global_step % 10 == 0:
+            print(f"[GPU {torch.cuda.current_device()}] Step {self.state.global_step}, Loss: {loss.item():.4f}")
+
+        return loss
