@@ -50,12 +50,12 @@ def main(args, export_root=None):
 
     train_loader, val_loader, test_loader, tokenizer, test_retrieval = dataloader_factory(args)
     
-    # Modern HuggingFace approach with BitsAndBytes 4-bit quantization
+    # Modern HuggingFace approach with BitsAndBytes 8-bit quantization
+    # 8-bit supports DDP (Data Parallelism) better than 4-bit
     bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,  # Use bfloat16 for better stability
+        load_in_8bit=True,  # Changed from 4bit to 8bit for multi-GPU support
+        llm_int8_threshold=6.0,
+        llm_int8_has_fp16_weight=False,
     )
     
     # Multi-GPU support
@@ -67,11 +67,13 @@ def main(args, export_root=None):
     
     # Device mapping for each process
     if local_rank != -1:
-        device_map = {'': local_rank}  # Each process uses its own GPU
-        max_memory_mapping = {local_rank: "13GB"}
+        # DDP mode: Each process gets full model on its own GPU
+        device_map = {'': local_rank}
+        max_memory_mapping = {local_rank: "14GB"}  # 8-bit uses less memory than float32
     else:
+        # Single GPU mode
         device_map = 'auto'
-        max_memory_mapping = {0: "13GB"}
+        max_memory_mapping = {0: "14GB"}
     
     model = AutoModelForCausalLM.from_pretrained(
         args.llm_base_model,
@@ -93,19 +95,24 @@ def main(args, export_root=None):
     # Prepare model for k-bit training with gradient checkpointing
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     
-    # Verify 4-bit quantization
+    # Verify 8-bit quantization
     if local_rank in [-1, 0]:  # Only print on main process
         print("\n" + "="*50)
-        print("🔍 MODEL QUANTIZATION CHECK")
+        print("🔍 MODEL QUANTIZATION CHECK (8-bit)")
         print("="*50)
         
-        # Check if model is quantized
+        # Check if model is quantized (8-bit has different attributes)
         is_quantized = False
         for name, param in model.named_parameters():
-            if hasattr(param, 'quant_state'):
+            if hasattr(param, 'CB') or hasattr(param, 'SCB'):  # 8-bit quantization attributes
+                is_quantized = True
+                print(f"✅ 8-bit Quantized Layer: {name}")
+                if hasattr(param, 'CB'):
+                    print(f"   CB attribute present (8-bit)")
+                break
+            elif hasattr(param, 'quant_state'):  # 4-bit would have this
                 is_quantized = True
                 print(f"✅ 4-bit Quantized Layer: {name}")
-                print(f"   Quant State: {param.quant_state}")
                 break
             elif 'embed' in name or 'lm_head' in name:
                 print(f"Layer: {name}")
@@ -113,7 +120,7 @@ def main(args, export_root=None):
                 print(f"   device: {param.device}")
         
         if is_quantized:
-            print("✅ Model is using 4-bit quantization!")
+            print("✅ Model is using quantization for multi-GPU DDP!")
         else:
             print("⚠️  Model is NOT quantized (using full precision)")
         

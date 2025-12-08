@@ -6,6 +6,8 @@ from .base import *
 from dataloader.collate_fns import llama_collate_fn_w_truncation
 
 import re
+import re
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -154,8 +156,18 @@ class LLMTrainer(Trainer):
         # Call the original training_step method
         loss = super().training_step(*args, **kwargs)
 
-        # Add custom logging for loss
+        # Add custom logging with batch size and GPU info
         if self.state.global_step % 10 == 0:
-            print(f"[GPU {torch.cuda.current_device()}] Step {self.state.global_step}, Loss: {loss.item():.4f}")
+            local_rank = int(os.environ.get("LOCAL_RANK", -1))
+            gpu_id = local_rank if local_rank != -1 else torch.cuda.current_device()
+            
+            # Get batch size from first arg (model inputs)
+            batch_size = 0
+            if len(args) > 1 and isinstance(args[1], dict):
+                inputs = args[1]
+                if 'input_ids' in inputs:
+                    batch_size = inputs['input_ids'].size(0)
+            
+            print(f"[GPU {gpu_id}] Step {self.state.global_step}, Batch: {batch_size}, Loss: {loss.item():.4f}")
 
         return loss
