@@ -60,7 +60,7 @@ class LLMTrainer(Trainer):
 
         eval_strategy = args.lora_eval_strategy if hasattr(args, 'lora_eval_strategy') else "no"
         
-        # Detect number of GPUs
+        # Detect number of GPUs - but BitsAndBytes doesn't support multi-GPU well
         num_gpus = torch.cuda.device_count()
         
         hf_args = TrainingArguments(
@@ -71,7 +71,7 @@ class LLMTrainer(Trainer):
             learning_rate=args.lora_lr,
             bf16=True,
             logging_steps=10,
-            optim="paged_adamw_32bit",
+            optim="paged_adamw_8bit",  # Use 8bit optimizer to save memory
             eval_strategy=eval_strategy,
             save_strategy="steps",
             eval_steps=args.lora_val_iterations,

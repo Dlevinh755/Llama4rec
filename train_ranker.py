@@ -4,12 +4,16 @@ import torch
 
 # Suppress all warnings
 warnings.filterwarnings('ignore')
+
+# CUDA debugging and optimization
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'  # Synchronous CUDA for better error messages
+os.environ['TORCH_USE_CUDA_DSA'] = '1'    # Enable device-side assertions
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-os.environ['WANDB_MODE'] = 'offline'  # Disable wandb prompts
+os.environ['WANDB_MODE'] = 'offline'
 os.environ['WANDB_DISABLED'] = 'true'
 
 # Multi-GPU setup for Kaggle (2 GPUs)
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'  # Use both GPUs
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 
 import argparse
 from llama_datasets import DATASETS
@@ -54,19 +58,17 @@ def main(args, export_root=None):
     # Multi-GPU support
     num_gpus = torch.cuda.device_count()
     print(f"🚀 Using {num_gpus} GPU(s) for training")
-    
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
     # For multi-GPU, distribute model across GPUs
     if num_gpus > 1:
         max_memory_mapping = {i: "13GB" for i in range(num_gpus)}  # Equal split
-        device_map = "auto"
     else:
         max_memory_mapping = {0: "13GB"}
-        device_map = "auto"
     
     model = AutoModelForCausalLM.from_pretrained(
         args.llm_base_model,
         quantization_config=bnb_config,
-        device_map=device_map,
+        device_map={'': local_rank},
         cache_dir=args.llm_cache_dir,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
