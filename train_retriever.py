@@ -20,7 +20,7 @@ except:
 
 def main(args, export_root=None):
     seed_everything(args.seed)
-    train_loader, val_loader, test_loader = dataloader_factory(args)
+    train_loader, val_loader, test_loader, _, _ = dataloader_factory(args)
     model = LRURec(args)
     if export_root == None:
         export_root = EXPERIMENT_ROOT + '/' + args.model_code + '/' + args.dataset_code

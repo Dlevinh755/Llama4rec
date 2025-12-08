@@ -14,7 +14,11 @@ def dataloader_factory(args):
     dataset = dataset_factory(args)
     dataloader = DATALOADERS[args.model_code]
     dataloader = dataloader(args, dataset)
-    train, val, test, test_retrieval = dataloader.get_pytorch_dataloaders()
+    if args.model_code == 'llm':
+        train, val, test, test_retrieval = dataloader.get_pytorch_dataloaders()
+    else:
+        train, val, test = dataloader.get_pytorch_dataloaders()
+        test_retrieval = None
     return train, val, test, dataloader.tokenizer, test_retrieval
 
 

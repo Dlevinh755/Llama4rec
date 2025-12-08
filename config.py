@@ -12,11 +12,6 @@ PROJECT_NAME = 'llmrec'
 
 
 def set_template(args):
-    if args.dataset_code == None:
-        print('******************** Dataset Selection ********************')
-        dataset_code = {'1': 'ml-100k', 'b': 'beauty', 'g': 'games'}
-        args.dataset_code = dataset_code[input('Input 1 for ml-100k, b for beauty and g for games: ')]
-
     if args.dataset_code == 'ml-100k':
         args.bert_max_len = 200
     else:
@@ -58,7 +53,7 @@ parser = argparse.ArgumentParser()
 ################
 # Dataset
 ################
-parser.add_argument('--dataset_code', type=str, default=None)
+parser.add_argument('--dataset_code', type=str, default='ml-100k')
 parser.add_argument('--min_rating', type=int, default=0)
 parser.add_argument('--min_uc', type=int, default=5)
 parser.add_argument('--min_sc', type=int, default=5)
