@@ -8,11 +8,11 @@ from config import *
 from model import *
 from dataloader import *
 from trainer import *
-from unsloth import FastLanguageModel
+# from unsloth import FastLanguageModel  # Removed - using native HuggingFace
 
-from transformers import BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from pytorch_lightning import seed_everything
-from model import LlamaForCausalLM
 from peft import (
     LoraConfig,
     get_peft_model,
@@ -34,30 +34,46 @@ def main(args, export_root=None):
 
     train_loader, val_loader, test_loader, tokenizer, test_retrieval = dataloader_factory(args)
     
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=args.llm_base_model,
-        max_seq_length=2048,
-        dtype=torch.float16,
+    # Modern HuggingFace approach with BitsAndBytes 4-bit quantization
+    bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
-        device_map='auto',
-        cache_dir=args.llm_cache_dir,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16,
     )
     
-    model = FastLanguageModel.get_peft_model(
-        model,
+    model = AutoModelForCausalLM.from_pretrained(
+        args.llm_base_model,
+        quantization_config=bnb_config,
+        device_map='auto',
+        cache_dir=args.llm_cache_dir,
+        trust_remote_code=True,
+        torch_dtype=torch.float16,
+    )
+    
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.llm_base_tokenizer if hasattr(args, 'llm_base_tokenizer') else args.llm_base_model,
+        cache_dir=args.llm_cache_dir,
+        trust_remote_code=True,
+    )
+    
+    # Prepare model for k-bit training
+    model = prepare_model_for_kbit_training(model)
+    
+    # Configure LoRA
+    lora_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                         "gate_proj", "up_proj", "down_proj"],
         lora_dropout=args.lora_dropout,
         bias="none",
-        use_gradient_checkpointing="unsloth",
-        random_state=3407,
-        use_rslora=False,
-        loftq_config=None,
+        task_type="CAUSAL_LM",
     )
     
+    model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+    model.config.use_cache = False  # Disable cache for training
     model.config.use_cache = False
     
     trainer = LLMTrainer(args, model, train_loader, val_loader, test_loader, tokenizer, export_root, args.use_wandb)

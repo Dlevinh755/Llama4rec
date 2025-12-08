@@ -1,8 +1,18 @@
 from abc import abstractmethod
 import json
 
-from transformers.file_utils import ModelOutput
-from transformers.data.processors.utils import InputFeatures
+from transformers.utils import ModelOutput
+from dataclasses import dataclass
+from typing import Optional
+import torch
+
+@dataclass
+class InputFeatures:
+    """Replacement for deprecated transformers.data.processors.utils.InputFeatures"""
+    input_ids: Optional[torch.Tensor] = None
+    attention_mask: Optional[torch.Tensor] = None
+    token_type_ids: Optional[torch.Tensor] = None
+    label: Optional[torch.Tensor] = None
 
 import torch
 import torch.nn as nn

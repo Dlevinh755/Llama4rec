@@ -62,10 +62,10 @@ parser.add_argument('--seed', type=int, default=42)
 ################
 # Dataloader
 ################
-parser.add_argument('--train_batch_size', type=int, default=64)
-parser.add_argument('--val_batch_size', type=int, default=64)
-parser.add_argument('--test_batch_size', type=int, default=64)
-parser.add_argument('--num_workers', type=int, default=8)
+parser.add_argument('--train_batch_size', type=int, default=32)
+parser.add_argument('--val_batch_size', type=int, default=32)
+parser.add_argument('--test_batch_size', type=int, default=32)
+parser.add_argument('--num_workers', type=int, default=2)
 parser.add_argument('--sliding_window_size', type=float, default=1.0)
 parser.add_argument('--negative_sample_size', type=int, default=10)
 
@@ -74,7 +74,7 @@ parser.add_argument('--negative_sample_size', type=int, default=10)
 ################
 # optimization #
 parser.add_argument('--device', type=str, default='cuda', choices=['cpu', 'cuda'])
-parser.add_argument('--num_epochs', type=int, default=30)
+parser.add_argument('--num_epochs', type=int, default=10)
 parser.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam'])
 parser.add_argument('--weight_decay', type=float, default=None)
 parser.add_argument('--adam_epsilon', type=float, default=1e-9)
