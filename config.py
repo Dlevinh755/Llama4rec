@@ -17,9 +17,13 @@ def set_template(args):
     else:
         args.bert_max_len = 50
 
+    # Auto-adjust batch size for multi-GPU
+    num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 1
+    
     if 'llm' in args.model_code: 
         batch = 16 if args.dataset_code == 'ml-100k' else 12
-        args.lora_micro_batch_size = batch
+        # Scale micro batch size with number of GPUs (keep total batch same)
+        args.lora_micro_batch_size = min(batch, 4 * num_gpus)  # 4 per GPU
     else: 
         batch = 16 if args.dataset_code == 'ml-100k' else 64
 
@@ -140,7 +144,7 @@ parser.add_argument('--lora_num_epochs', type=int, default=1)
 parser.add_argument('--lora_val_iterations', type=int, default=100)
 parser.add_argument('--lora_early_stopping_patience', type=int, default=20)
 parser.add_argument('--lora_lr', type=float, default=1e-4)
-parser.add_argument('--lora_micro_batch_size', type=int, default=16)
+parser.add_argument('--lora_micro_batch_size', type=int, default=4)  # Reduced for GPU memory
 parser.add_argument('--lora_eval_strategy', type=str, default='no', choices=['no', 'steps', 'epoch'])
 
 ################

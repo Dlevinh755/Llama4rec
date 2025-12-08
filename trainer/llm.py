@@ -60,9 +60,12 @@ class LLMTrainer(Trainer):
 
         eval_strategy = args.lora_eval_strategy if hasattr(args, 'lora_eval_strategy') else "no"
         
+        # Detect number of GPUs
+        num_gpus = torch.cuda.device_count()
+        
         hf_args = TrainingArguments(
             per_device_train_batch_size=args.lora_micro_batch_size,
-            gradient_accumulation_steps=args.train_batch_size//args.lora_micro_batch_size,
+            gradient_accumulation_steps=args.train_batch_size//args.lora_micro_batch_size//max(1, num_gpus),  # Adjust for multi-GPU
             warmup_steps=args.warmup_steps,
             num_train_epochs=args.lora_num_epochs,
             learning_rate=args.lora_lr,
@@ -76,12 +79,16 @@ class LLMTrainer(Trainer):
             output_dir=export_root,
             save_total_limit=3,
             load_best_model_at_end=False,
-            ddp_find_unused_parameters=None,
+            ddp_find_unused_parameters=False if num_gpus > 1 else None,  # Enable DDP for multi-GPU
             group_by_length=False,
             report_to="wandb" if use_wandb else None,
             run_name=args.model_code+'_'+args.dataset_code if use_wandb else None,
             metric_for_best_model=args.rerank_best_metric,
             greater_is_better=True,
+            # Multi-GPU optimization
+            dataloader_num_workers=args.num_workers if num_gpus > 1 else 0,
+            dataloader_pin_memory=True if num_gpus > 1 else False,
+            gradient_checkpointing=True,  # Save memory
         )
         
         callbacks = []

@@ -8,6 +8,9 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 os.environ['WANDB_MODE'] = 'offline'  # Disable wandb prompts
 os.environ['WANDB_DISABLED'] = 'true'
 
+# Multi-GPU setup for Kaggle (2 GPUs)
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'  # Use both GPUs
+
 import argparse
 from llama_datasets import DATASETS
 from config import *
@@ -45,16 +48,30 @@ def main(args, export_root=None):
         load_in_4bit=True,
         bnb_4bit_use_double_quant=True,
         bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_compute_dtype=torch.bfloat16,  # Use bfloat16 for better stability
     )
+    
+    # Multi-GPU support
+    num_gpus = torch.cuda.device_count()
+    print(f"🚀 Using {num_gpus} GPU(s) for training")
+    
+    # For multi-GPU, distribute model across GPUs
+    if num_gpus > 1:
+        max_memory_mapping = {i: "13GB" for i in range(num_gpus)}  # Equal split
+        device_map = "auto"
+    else:
+        max_memory_mapping = {0: "13GB"}
+        device_map = "auto"
     
     model = AutoModelForCausalLM.from_pretrained(
         args.llm_base_model,
         quantization_config=bnb_config,
-        device_map='auto',
+        device_map=device_map,
         cache_dir=args.llm_cache_dir,
         trust_remote_code=True,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
+        max_memory=max_memory_mapping,
     )
     
     tokenizer = AutoTokenizer.from_pretrained(
@@ -63,8 +80,8 @@ def main(args, export_root=None):
         trust_remote_code=True,
     )
     
-    # Prepare model for k-bit training
-    model = prepare_model_for_kbit_training(model)
+    # Prepare model for k-bit training with gradient checkpointing
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     
     # Configure LoRA
     lora_config = LoraConfig(
