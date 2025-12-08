@@ -62,12 +62,22 @@ class LLMTrainer(Trainer):
 
         eval_strategy = args.lora_eval_strategy if hasattr(args, 'lora_eval_strategy') else "no"
         
-        # Detect number of GPUs - but BitsAndBytes doesn't support multi-GPU well
+        # Detect number of GPUs
         num_gpus = torch.cuda.device_count()
         
+        # Ensure batch size is valid
+        micro_batch_size = getattr(args, 'lora_micro_batch_size', None)
+        if micro_batch_size is None or micro_batch_size <= 0:
+            micro_batch_size = 4  # Safe default
+            print(f"⚠️  Warning: lora_micro_batch_size was {args.lora_micro_batch_size}, using default {micro_batch_size}")
+        
+        # Calculate gradient accumulation steps safely
+        total_batch = getattr(args, 'train_batch_size', 16)
+        grad_accum_steps = max(1, total_batch // micro_batch_size // max(1, num_gpus))
+        
         hf_args = TrainingArguments(
-            per_device_train_batch_size=args.lora_micro_batch_size,
-            gradient_accumulation_steps=args.train_batch_size//args.lora_micro_batch_size//max(1, num_gpus),  # Adjust for multi-GPU
+            per_device_train_batch_size=micro_batch_size,
+            gradient_accumulation_steps=grad_accum_steps,  # Safe calculation
             warmup_steps=args.warmup_steps,
             num_train_epochs=args.lora_num_epochs,
             learning_rate=args.lora_lr,

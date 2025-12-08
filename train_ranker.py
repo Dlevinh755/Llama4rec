@@ -2,18 +2,19 @@ import os
 import warnings
 import sys
 import torch
+import traceback
 
-# Suppress ALL warnings
-warnings.filterwarnings('ignore')
-os.environ['PYTHONWARNINGS'] = 'ignore'
-sys.stderr = open(os.devnull, 'w')  # Suppress stderr warnings
+# Suppress most warnings but keep errors visible
+warnings.filterwarnings('ignore', category=UserWarning)
+os.environ['PYTHONWARNINGS'] = 'ignore::UserWarning'
 
 # Environment variables
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 os.environ['WANDB_SILENT'] = 'true'
 os.environ['WANDB_CONSOLE'] = 'off'
-os.environ['WANDB_MODE'] = 'disabled'  # Completely disable wandb
+os.environ['WANDB_MODE'] = 'disabled'
 os.environ['WANDB_DISABLED'] = 'true'
+os.environ['TORCHELASTIC_ERROR_FILE'] = '/tmp/error.json'  # Enable traceback
 
 # Multi-GPU setup
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
@@ -121,10 +122,23 @@ def main(args, export_root=None):
 
 
 if __name__ == "__main__":
-    # Import args (already parsed in config.py)
-    args.model_code = 'llm'
-    
-    # Set template to configure batch sizes based on GPU count
-    set_template(args)
-    
-    main(args, export_root=None)
+    try:
+        # Import args (already parsed in config.py)
+        args.model_code = 'llm'
+        
+        # Set template to configure batch sizes based on GPU count
+        set_template(args)
+        
+        # Debug: Print batch size configuration
+        local_rank = int(os.environ.get("LOCAL_RANK", -1))
+        if local_rank in [-1, 0]:
+            print(f"📊 Batch Configuration:")
+            print(f"   lora_micro_batch_size: {args.lora_micro_batch_size}")
+            print(f"   train_batch_size: {args.train_batch_size}")
+        
+        main(args, export_root=None)
+    except Exception as e:
+        print(f"\n❌ ERROR in train_ranker.py:")
+        print(f"   {type(e).__name__}: {str(e)}")
+        traceback.print_exc()
+        raise
