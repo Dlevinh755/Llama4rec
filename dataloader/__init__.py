@@ -16,10 +16,12 @@ def dataloader_factory(args):
     dataloader = dataloader(args, dataset)
     if args.model_code == 'llm':
         train, val, test, test_retrieval = dataloader.get_pytorch_dataloaders()
+        tokenizer = dataloader.tokenizer
     else:
         train, val, test = dataloader.get_pytorch_dataloaders()
         test_retrieval = None
-    return train, val, test, dataloader.tokenizer, test_retrieval
+        tokenizer = None
+    return train, val, test, tokenizer, test_retrieval
 
 
 def test_subset_dataloader_loader(args):
