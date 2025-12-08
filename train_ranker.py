@@ -64,14 +64,24 @@ def main(args, export_root=None):
         print(f"   Mode: Model layers SPLIT across GPUs (memory efficient)")
     
     # Model Parallelism: distribute model across GPUs
+    # Use device_map based on whether running with accelerate or not
+    if local_rank != -1:
+        # Running with accelerate: use specific GPU for this process
+        device_map = {'': local_rank}
+        max_memory_mapping = {local_rank: "13GB"}
+    else:
+        # Running without accelerate: auto-distribute across all GPUs
+        device_map = "auto"
+        max_memory_mapping = {i: "13GB" for i in range(num_gpus)}
+    
     model = AutoModelForCausalLM.from_pretrained(
         args.llm_base_model,
         quantization_config=bnb_config,
-        device_map="auto",  # Automatically distribute layers across GPUs
+        device_map=device_map,
         cache_dir=args.llm_cache_dir,
         trust_remote_code=True,
         low_cpu_mem_usage=True,
-        max_memory={0: "13GB", 1: "13GB"},  # Limit per GPU
+        max_memory=max_memory_mapping,
     )
     
     tokenizer = AutoTokenizer.from_pretrained(
