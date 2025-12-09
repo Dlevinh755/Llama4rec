@@ -157,6 +157,34 @@ parser.add_argument('--debug_max_val_users', type=int, default=None, help='Limit
 parser.add_argument('--debug_max_test_users', type=int, default=None, help='Limit test users for debugging')
 
 ################
+# Checkpoint / Resume
+################
+parser.add_argument('--resume_from_checkpoint', type=str, default='false',
+    help='Set to true to resume training from the latest checkpoint in the experiment folder')
+
+################
 
 
 args = parser.parse_args()
+
+def test(self, test_retrieval):
+    self.model.eval()
+    all_logits, all_labels = [], []
+
+    for batch in self.get_test_dataloader():
+        batch = {k: v.to(self.model.device) for k, v in batch.items()}
+        with torch.no_grad():
+            outputs = self.model(
+                input_ids=batch["input_ids"],
+                attention_mask=batch["attention_mask"],
+            )
+            # lấy logit cuối của mỗi sequence
+            logits = outputs.logits[:, -1, :]   # [B, V]
+        all_logits.append(logits.cpu())
+        all_labels.append(batch["labels"].cpu())
+
+    logits = torch.cat(all_logits, dim=0)
+    labels = torch.cat(all_labels, dim=0)
+
+    metrics = self.compute_metrics((logits.numpy(), labels.numpy()))
+    print('Ranking Performance on Subset:', metrics)

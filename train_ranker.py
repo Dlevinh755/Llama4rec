@@ -43,6 +43,9 @@ def main(args, export_root=None):
     if export_root == None:
         export_root = EXPERIMENT_ROOT + '/' + args.llm_base_model.split('/')[-1] + '/' + args.dataset_code
 
+    # Ensure export directory exists (for checkpoints)
+    os.makedirs(export_root, exist_ok=True)
+
     train_loader, val_loader, test_loader, tokenizer, test_retrieval = dataloader_factory(args)
     
     # ✅ USE 4-BIT QUANTIZATION WITH MODEL PARALLELISM
@@ -131,8 +134,28 @@ def main(args, export_root=None):
     model.config.use_cache = False
     
     trainer = LLMTrainer(args, model, train_loader, val_loader, test_loader, tokenizer, export_root, args.use_wandb)
-    
-    trainer.train()
+
+    # Optional: resume from latest checkpoint if available and requested
+    resume_from_checkpoint = getattr(args, "resume_from_checkpoint", False)
+    if isinstance(resume_from_checkpoint, str) and resume_from_checkpoint.lower() in ["true", "1", "yes"]:
+        resume_from_checkpoint = True
+
+    last_checkpoint = None
+    if resume_from_checkpoint:
+        # Look for last checkpoint in export_root (format: checkpoint-* as saved by HF Trainer)
+        checkpoints = [
+            os.path.join(export_root, d)
+            for d in os.listdir(export_root)
+            if d.startswith("checkpoint-") and os.path.isdir(os.path.join(export_root, d))
+        ]
+        if len(checkpoints) > 0:
+            checkpoints.sort(key=lambda p: int(p.split("checkpoint-")[-1]))
+            last_checkpoint = checkpoints[-1]
+            print(f"✅ Found checkpoint, resuming from: {last_checkpoint}")
+        else:
+            print("ℹ️ No checkpoint found in export_root, training from scratch.")
+
+    trainer.train(resume_from_checkpoint=last_checkpoint)
     trainer.test(test_retrieval)
 
 
@@ -150,6 +173,9 @@ if __name__ == "__main__":
             print(f"📊 Batch Configuration:")
             print(f"   lora_micro_batch_size: {args.lora_micro_batch_size}")
             print(f"   train_batch_size: {args.train_batch_size}")
+            # Show resume flag if present
+            if hasattr(args, "resume_from_checkpoint"):
+                print(f"   resume_from_checkpoint: {args.resume_from_checkpoint}")
         
         main(args, export_root=None)
     except Exception as e:
